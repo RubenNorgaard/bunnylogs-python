@@ -3,21 +3,23 @@ BunnyLogs logging handler.
 
 Sends log records to a BunnyLogs stream endpoint in a background thread so
 that logging calls never block the caller.
+
+A persistent HTTPSConnection is kept alive inside the worker thread and
+reused across records, avoiding a TCP + TLS handshake on every emit().
+The connection is re-established automatically after any network error.
 """
 
+import http.client
 import logging
 import queue
 import ssl
 import threading
-import urllib.error
 import urllib.parse
-import urllib.request
 from datetime import datetime, timezone
 
 import certifi
 
 _SSL_CTX = ssl.create_default_context(cafile=certifi.where())
-
 
 _STOP = object()  # sentinel that tells the worker thread to exit
 
@@ -57,7 +59,10 @@ class BunnyLogsHandler(logging.Handler):
         timeout: float = 5,
     ) -> None:
         super().__init__(level)
-        self._url = f"{endpoint.rstrip('/')}/live/{uuid}"
+        parsed = urllib.parse.urlparse(endpoint)
+        self._scheme = parsed.scheme or "https"
+        self._host = parsed.netloc or parsed.path
+        self._path = f"/live/{uuid}"
         self._timeout = timeout
         self._queue: queue.SimpleQueue = queue.SimpleQueue()
         self._thread = threading.Thread(
@@ -81,7 +86,6 @@ class BunnyLogsHandler(logging.Handler):
     def close(self) -> None:
         """Flush remaining records then shut down the worker thread."""
         self._queue.put_nowait(_STOP)
-        # Give the worker up to 5 s to drain before the handler is torn down.
         self._thread.join(timeout=5)
         super().close()
 
@@ -89,14 +93,31 @@ class BunnyLogsHandler(logging.Handler):
     # Background worker
     # ------------------------------------------------------------------
 
+    def _make_conn(self) -> http.client.HTTPConnection:
+        if self._scheme == "https":
+            return http.client.HTTPSConnection(
+                self._host, context=_SSL_CTX, timeout=self._timeout
+            )
+        return http.client.HTTPConnection(self._host, timeout=self._timeout)
+
     def _worker(self) -> None:
+        conn: http.client.HTTPConnection | None = None
         while True:
             item = self._queue.get()
             if item is _STOP:
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
                 return
-            self._send(item)
+            conn = self._send(item, conn)
 
-    def _send(self, record: logging.LogRecord) -> None:
+    def _send(
+        self,
+        record: logging.LogRecord,
+        conn: "http.client.HTTPConnection | None",
+    ) -> "http.client.HTTPConnection | None":
         try:
             ts = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat()
             data = urllib.parse.urlencode(
@@ -107,14 +128,36 @@ class BunnyLogsHandler(logging.Handler):
                     "timestamp": ts,
                 }
             ).encode()
-            req = urllib.request.Request(
-                self._url,
-                data=data,
-                method="POST",
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
+
+            if conn is None:
+                conn = self._make_conn()
+
+            conn.request(
+                "POST",
+                self._path,
+                body=data,
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Content-Length": str(len(data)),
+                },
             )
-            urllib.request.urlopen(req, timeout=self._timeout, context=_SSL_CTX)
-        except urllib.error.HTTPError:
-            pass  # server-side errors (4xx/5xx) — drop silently
+            resp = conn.getresponse()
+            resp.read()  # drain so the connection can be reused
+            return conn
+
+        except http.client.HTTPException:
+            # Protocol error or server closed the connection — reconnect next send
+            try:
+                conn.close()
+            except Exception:
+                pass
+            return None
+
         except Exception:
+            try:
+                if conn is not None:
+                    conn.close()
+            except Exception:
+                pass
             self.handleError(record)
+            return None
