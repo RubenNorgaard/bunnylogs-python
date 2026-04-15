@@ -114,5 +114,7 @@ class BunnyLogsHandler(logging.Handler):
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
             urllib.request.urlopen(req, timeout=self._timeout, context=_SSL_CTX)
+        except urllib.error.HTTPError:
+            pass  # server-side errors (4xx/5xx) — drop silently
         except Exception:
             self.handleError(record)
