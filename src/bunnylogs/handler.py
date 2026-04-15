@@ -7,11 +7,16 @@ that logging calls never block the caller.
 
 import logging
 import queue
+import ssl
 import threading
 import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+
+import certifi
+
+_SSL_CTX = ssl.create_default_context(cafile=certifi.where())
 
 
 _STOP = object()  # sentinel that tells the worker thread to exit
@@ -108,6 +113,6 @@ class BunnyLogsHandler(logging.Handler):
                 method="POST",
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
-            urllib.request.urlopen(req, timeout=self._timeout)
+            urllib.request.urlopen(req, timeout=self._timeout, context=_SSL_CTX)
         except Exception:
             self.handleError(record)
