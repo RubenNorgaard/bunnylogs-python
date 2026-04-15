@@ -57,7 +57,7 @@ class BunnyLogsHandler(logging.Handler):
         timeout: float = 5,
     ) -> None:
         super().__init__(level)
-        self._url = f"{endpoint.rstrip('/')}/live/{uuid}/"
+        self._url = f"{endpoint.rstrip('/')}/live/{uuid}"
         self._timeout = timeout
         self._queue: queue.SimpleQueue = queue.SimpleQueue()
         self._thread = threading.Thread(
