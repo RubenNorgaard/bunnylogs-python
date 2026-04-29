@@ -277,7 +277,7 @@ async def _run(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="bunnylogs-tail",
+        prog="bunnytail",
         description="Stream logs from a BunnyLogs logspace.",
     )
     parser.add_argument("logspace", help="Logspace UUID or name")
