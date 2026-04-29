@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bunnylogs"
-version = "0.1.4"
+version = "0.1.5"
 description = "Python logging handler for BunnyLogs"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.8"
-dependencies = ["certifi"]
+dependencies = ["certifi", "websockets>=11.0"]
 keywords = ["logging", "bunnylogs", "log handler"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -27,6 +27,9 @@ classifiers = [
 [project.urls]
 Homepage = "https://bunnylogs.com"
 Repository = "https://github.com/RubenNorgaard/bunnylogs-python"
+
+[project.scripts]
+bunnylogs-tail = "bunnylogs.tail:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/bunnylogs"]
