@@ -218,7 +218,7 @@ async def _stream(ws_uri: str, session_id: str | None) -> bool:
         headers["Cookie"] = f"sessionid={session_id}"
 
     try:
-        async with websockets.connect(ws_uri, additional_headers=headers) as ws:
+        async with websockets.connect(ws_uri, additional_headers=headers, ssl=_SSL_CTX) as ws:
             print("Connected. Streaming logs… (Ctrl-C to stop)\n", file=sys.stderr)
             async for raw in ws:
                 _print_entry(json.loads(raw))
